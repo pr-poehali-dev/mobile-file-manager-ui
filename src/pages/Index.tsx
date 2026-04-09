@@ -1,7 +1,7 @@
 import { useState } from "react";
 import Icon from "@/components/ui/icon";
 
-type Section = "home" | "files" | "folders" | "recent" | "search" | "favorites" | "settings" | "cloud";
+type Section = "home" | "files" | "search" | "favorites" | "settings";
 
 interface FileItem {
   id: string;
@@ -33,7 +33,7 @@ const MOCK_FILES: FileItem[] = [
   { id: "8", name: "Техническое задание.docx", type: "file", size: "320 КБ", modified: "20 мар, 12:15", extension: "docx", shared: true, access: "edit" },
 ];
 
-const RECENT_FILES: FileItem[] = MOCK_FILES.slice(0, 5);
+const RECENT_FILES: FileItem[] = MOCK_FILES.slice(0, 4);
 const FAVORITES: FileItem[] = MOCK_FILES.filter(f => f.favorite);
 
 const SHARED_USERS: SharedUser[] = [
@@ -42,14 +42,11 @@ const SHARED_USERS: SharedUser[] = [
   { name: "Дмитрий Соколов", email: "d.sokolov@company.ru", access: "admin", avatar: "ДС" },
 ];
 
-const NAV_ITEMS = [
+const BOTTOM_NAV = [
   { id: "home" as Section, label: "Главная", icon: "LayoutDashboard" },
-  { id: "files" as Section, label: "Файлы", icon: "File" },
-  { id: "folders" as Section, label: "Папки", icon: "Folder" },
-  { id: "recent" as Section, label: "Недавние", icon: "Clock" },
+  { id: "files" as Section, label: "Файлы", icon: "FolderOpen" },
   { id: "search" as Section, label: "Поиск", icon: "Search" },
   { id: "favorites" as Section, label: "Избранное", icon: "Star" },
-  { id: "cloud" as Section, label: "Облако", icon: "Cloud" },
   { id: "settings" as Section, label: "Настройки", icon: "Settings" },
 ];
 
@@ -67,475 +64,540 @@ const ACCESS_LABELS = {
   admin: { label: "Управление", color: "bg-emerald-50 text-emerald-700" },
 };
 
-// Тёплая палитра — базовые классы
 const S = {
   bg: "bg-[hsl(36,33%,95%)]",
   card: "bg-[hsl(36,40%,98%)]",
   border: "border-[hsl(32,18%,85%)]",
-  sidebar: "bg-[hsl(36,30%,97%)]",
   text: "text-[hsl(24,20%,18%)]",
   muted: "text-[hsl(24,12%,50%)]",
   accent: "bg-[hsl(16,60%,45%)]",
   accentHover: "hover:bg-[hsl(16,60%,40%)]",
+  accentActive: "active:bg-[hsl(16,60%,38%)]",
   accentText: "text-[hsl(16,60%,45%)]",
   accentBg: "bg-[hsl(16,55%,92%)]",
   hover: "hover:bg-[hsl(36,25%,92%)]",
   active: "bg-[hsl(16,60%,45%)] text-white",
-  navInactive: "text-[hsl(24,12%,48%)] hover:bg-[hsl(36,25%,92%)] hover:text-[hsl(24,20%,22%)]",
+  divider: "divide-[hsl(32,18%,85%)]",
 };
 
-function FileRow({ file, onShare }: { file: FileItem; onShare: (file: FileItem) => void }) {
-  const extColor = file.extension ? EXT_COLORS[file.extension] || "bg-stone-100 text-stone-500" : "bg-stone-50 text-stone-400";
-  return (
-    <div className={`group flex items-center gap-4 px-5 py-3 ${S.hover} border-b ${S.border} last:border-0 transition-colors cursor-pointer`}>
-      <div className={`w-8 h-8 rounded-lg flex items-center justify-center text-xs font-bold flex-shrink-0 ${extColor}`}>
-        {file.type === "folder"
-          ? <Icon name="Folder" size={15} />
-          : <span>{file.extension?.toUpperCase().slice(0, 3) || <Icon name="File" size={15} />}</span>
-        }
-      </div>
-      <div className="flex-1 min-w-0">
-        <p className={`text-sm font-medium ${S.text} truncate`}>{file.name}</p>
-        <p className={`text-xs ${S.muted} mt-0.5`}>{file.modified}{file.size ? ` · ${file.size}` : ""}</p>
-      </div>
-      <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-        {file.shared && file.access && (
-          <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${ACCESS_LABELS[file.access].color}`}>
-            {ACCESS_LABELS[file.access].label}
-          </span>
-        )}
-        <button
-          onClick={(e) => { e.stopPropagation(); onShare(file); }}
-          className={`p-1.5 rounded-lg ${S.hover} ${S.muted} hover:${S.text} transition-colors`}
-        >
-          <Icon name="Share2" size={14} />
-        </button>
-        <button className={`p-1.5 rounded-lg ${S.hover} ${S.muted} hover:${S.text} transition-colors`}>
-          <Icon name="MoreHorizontal" size={14} />
-        </button>
-      </div>
-      {file.shared && <div className={`w-1.5 h-1.5 rounded-full ${S.accent} flex-shrink-0 ml-1`} />}
-    </div>
-  );
-}
-
-function ShareModal({ file, onClose }: { file: FileItem; onClose: () => void }) {
+// --- Share Sheet (мобильный bottom sheet) ---
+function ShareSheet({ file, onClose }: { file: FileItem; onClose: () => void }) {
   const [access, setAccess] = useState<"view" | "edit" | "admin">("view");
   const [email, setEmail] = useState("");
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/20 backdrop-blur-sm">
-      <div className={`${S.card} rounded-2xl shadow-2xl w-[480px] max-w-[95vw]`}>
-        <div className={`px-6 py-5 border-b ${S.border} flex items-center justify-between`}>
+    <div className="fixed inset-0 z-50 flex flex-col justify-end">
+      <div className="absolute inset-0 bg-black/30 backdrop-blur-sm" onClick={onClose} />
+      <div className={`relative ${S.card} rounded-t-3xl shadow-2xl max-h-[85vh] flex flex-col`}>
+        {/* Handle */}
+        <div className="flex justify-center pt-3 pb-1">
+          <div className="w-10 h-1 rounded-full bg-stone-200" />
+        </div>
+
+        {/* Header */}
+        <div className={`px-5 py-3 border-b ${S.border} flex items-center justify-between`}>
           <div>
-            <h3 className={`font-semibold ${S.text}`}>Поделиться доступом</h3>
-            <p className={`text-xs ${S.muted} mt-0.5 truncate max-w-[300px]`}>{file.name}</p>
+            <p className={`text-base font-semibold ${S.text}`}>Поделиться</p>
+            <p className={`text-xs ${S.muted} truncate max-w-[220px]`}>{file.name}</p>
           </div>
-          <button onClick={onClose} className={`p-2 rounded-lg ${S.hover} transition-colors ${S.muted}`}>
-            <Icon name="X" size={18} />
+          <button onClick={onClose} className={`w-8 h-8 rounded-full bg-stone-100 flex items-center justify-center ${S.muted}`}>
+            <Icon name="X" size={15} />
           </button>
         </div>
 
-        <div className="px-6 py-5 space-y-5">
-          <div className="flex gap-2">
-            <input
-              value={email}
-              onChange={e => setEmail(e.target.value)}
-              placeholder="Email пользователя..."
-              className={`flex-1 px-3 py-2 text-sm border ${S.border} rounded-lg outline-none focus:border-[hsl(16,60%,45%)] transition-colors bg-transparent`}
-            />
-            <select
-              value={access}
-              onChange={e => setAccess(e.target.value as typeof access)}
-              className={`px-3 py-2 text-sm border ${S.border} rounded-lg outline-none bg-[hsl(36,40%,98%)] cursor-pointer ${S.text}`}
-            >
-              <option value="view">Просмотр</option>
-              <option value="edit">Редактирование</option>
-              <option value="admin">Управление</option>
-            </select>
-            <button className={`px-4 py-2 ${S.accent} text-white text-sm rounded-lg ${S.accentHover} transition-colors font-medium`}>
+        <div className="overflow-y-auto flex-1 px-5 py-4 space-y-5">
+          {/* Add user */}
+          <div className="space-y-2">
+            <p className={`text-xs font-semibold ${S.muted} uppercase tracking-wider`}>Добавить пользователя</p>
+            <div className={`flex gap-2 p-1 border ${S.border} rounded-2xl bg-stone-50`}>
+              <input
+                value={email}
+                onChange={e => setEmail(e.target.value)}
+                placeholder="Email..."
+                className="flex-1 px-3 py-2 text-sm bg-transparent outline-none"
+              />
+              <select
+                value={access}
+                onChange={e => setAccess(e.target.value as typeof access)}
+                className="text-xs px-2 py-1.5 rounded-xl bg-white border border-stone-200 outline-none cursor-pointer"
+              >
+                <option value="view">Просмотр</option>
+                <option value="edit">Редактирование</option>
+                <option value="admin">Управление</option>
+              </select>
+            </div>
+            <button className={`w-full py-2.5 ${S.accent} text-white text-sm font-semibold rounded-xl ${S.accentHover} ${S.accentActive} transition-colors`}>
               Добавить
             </button>
           </div>
 
-          <div>
-            <p className={`text-xs font-semibold ${S.muted} uppercase tracking-wider mb-3`}>Доступ имеют</p>
-            <div className="space-y-1">
+          {/* Current users */}
+          <div className="space-y-2">
+            <p className={`text-xs font-semibold ${S.muted} uppercase tracking-wider`}>Имеют доступ</p>
+            <div className={`${S.card} border ${S.border} rounded-2xl overflow-hidden divide-y ${S.divider}`}>
               {SHARED_USERS.map(user => (
-                <div key={user.email} className="flex items-center gap-3 py-2">
-                  <div className={`w-8 h-8 rounded-full ${S.accentBg} flex items-center justify-center text-xs font-semibold ${S.accentText} flex-shrink-0`}>
+                <div key={user.email} className="flex items-center gap-3 px-4 py-3">
+                  <div className={`w-9 h-9 rounded-full ${S.accentBg} flex items-center justify-center text-xs font-bold ${S.accentText} flex-shrink-0`}>
                     {user.avatar}
                   </div>
                   <div className="flex-1 min-w-0">
-                    <p className={`text-sm font-medium ${S.text}`}>{user.name}</p>
-                    <p className={`text-xs ${S.muted}`}>{user.email}</p>
+                    <p className={`text-sm font-medium ${S.text} truncate`}>{user.name}</p>
+                    <span className={`text-xs px-1.5 py-0.5 rounded-full ${ACCESS_LABELS[user.access].color} font-medium`}>
+                      {ACCESS_LABELS[user.access].label}
+                    </span>
                   </div>
-                  <select
-                    defaultValue={user.access}
-                    className={`text-xs px-2 py-1 border ${S.border} rounded-lg bg-[hsl(36,40%,98%)] cursor-pointer outline-none ${S.text}`}
-                  >
-                    <option value="view">Просмотр</option>
-                    <option value="edit">Редактирование</option>
-                    <option value="admin">Управление</option>
-                  </select>
-                  <button className={`p-1 ${S.muted} hover:text-red-400 transition-colors`}>
-                    <Icon name="X" size={14} />
+                  <button className={`${S.muted} hover:text-red-400 transition-colors`}>
+                    <Icon name="X" size={15} />
                   </button>
                 </div>
               ))}
             </div>
           </div>
 
-          <div className={`pt-2 border-t ${S.border} flex items-center gap-3`}>
-            <div className={`flex-1 flex items-center gap-2 text-sm ${S.muted}`}>
-              <Icon name="Link" size={14} />
-              <span>Ссылка на {file.type === "folder" ? "папку" : "файл"}</span>
-            </div>
-            <button className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium ${S.muted} hover:${S.text} border ${S.border} rounded-lg hover:border-[hsl(32,18%,72%)] transition-colors`}>
-              <Icon name="Copy" size={12} />
-              Скопировать
-            </button>
-          </div>
+          {/* Copy link */}
+          <button className={`w-full flex items-center justify-center gap-2 py-2.5 border ${S.border} rounded-xl text-sm font-medium ${S.muted} ${S.hover} transition-colors`}>
+            <Icon name="Link" size={15} />
+            Скопировать ссылку
+          </button>
         </div>
       </div>
     </div>
   );
 }
 
-function HomeSection({ onShare }: { onShare: (f: FileItem) => void }) {
+// --- File card (mobile) ---
+function MobileFileRow({ file, onShare }: { file: FileItem; onShare: (f: FileItem) => void }) {
+  const extColor = file.extension ? EXT_COLORS[file.extension] || "bg-stone-100 text-stone-500" : "bg-stone-50 text-stone-400";
   return (
-    <div className="space-y-7">
-      <div className="grid grid-cols-3 gap-4">
-        {[
-          { label: "Всего файлов", value: "1 284", icon: "Files" },
-          { label: "Общий доступ", value: "38", icon: "Users" },
-          { label: "Использовано", value: "12.4 ГБ", icon: "HardDrive" },
-        ].map((stat, i) => (
-          <div key={stat.label} className={`${S.card} border ${S.border} rounded-xl px-5 py-4 hover:border-[hsl(32,18%,72%)] transition-colors`}>
-            <div className="flex items-center justify-between mb-3">
-              <span className={`text-xs ${S.muted} font-medium`}>{stat.label}</span>
-              <div className={`w-7 h-7 rounded-lg flex items-center justify-center ${i === 1 ? S.accentBg : "bg-stone-100"}`}>
-                <Icon name={stat.icon} size={14} className={i === 1 ? S.accentText : "text-stone-500"} />
+    <div className={`flex items-center gap-3 px-4 py-3.5 active:bg-stone-50 transition-colors cursor-pointer border-b ${S.border} last:border-0`}>
+      <div className={`w-10 h-10 rounded-xl flex items-center justify-center text-xs font-bold flex-shrink-0 ${extColor}`}>
+        {file.type === "folder"
+          ? <Icon name="Folder" size={18} />
+          : <span className="text-[10px]">{file.extension?.toUpperCase().slice(0, 3)}</span>
+        }
+      </div>
+      <div className="flex-1 min-w-0">
+        <p className={`text-sm font-medium ${S.text} truncate`}>{file.name}</p>
+        <p className={`text-xs ${S.muted} mt-0.5`}>{file.modified}{file.size ? ` · ${file.size}` : ""}</p>
+      </div>
+      <div className="flex items-center gap-1.5">
+        {file.shared && <div className={`w-1.5 h-1.5 rounded-full ${S.accent}`} />}
+        <button
+          onClick={e => { e.stopPropagation(); onShare(file); }}
+          className={`p-2 rounded-lg ${S.muted} active:bg-stone-100 transition-colors`}
+        >
+          <Icon name="MoreVertical" size={16} />
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// --- Sections ---
+function HomeScreen({ onShare, onNav }: { onShare: (f: FileItem) => void; onNav: (s: Section) => void }) {
+  return (
+    <div className="space-y-5 pb-2">
+      {/* Storage card */}
+      <div className={`${S.accent} rounded-2xl px-5 py-5 text-white mx-1`}>
+        <div className="flex items-center justify-between mb-4">
+          <div>
+            <p className="text-xs font-medium opacity-75">Облачное хранилище</p>
+            <p className="text-2xl font-bold mt-0.5">12.4 <span className="text-base font-semibold opacity-80">ГБ</span></p>
+            <p className="text-xs opacity-60 mt-0.5">из 50 ГБ используется</p>
+          </div>
+          <div className="w-14 h-14 rounded-2xl bg-white/15 flex items-center justify-center">
+            <Icon name="Cloud" size={26} className="text-white" />
+          </div>
+        </div>
+        <div className="h-1.5 bg-white/20 rounded-full overflow-hidden">
+          <div className="h-full bg-white rounded-full" style={{ width: "24.8%" }} />
+        </div>
+        <div className="flex justify-between text-xs opacity-60 mt-1.5">
+          <span>24.8% заполнено</span>
+          <span>37.6 ГБ свободно</span>
+        </div>
+      </div>
+
+      {/* Quick actions */}
+      <div>
+        <p className={`text-xs font-semibold ${S.muted} uppercase tracking-wider px-1 mb-3`}>Быстрые действия</p>
+        <div className="grid grid-cols-4 gap-2">
+          {[
+            { label: "Загрузить", icon: "Upload", color: "bg-sky-50 text-sky-600" },
+            { label: "Папка", icon: "FolderPlus", color: "bg-amber-50 text-amber-600" },
+            { label: "Документ", icon: "FilePlus", color: "bg-green-50 text-green-600" },
+            { label: "Камера", icon: "Camera", color: `${S.accentBg} ${S.accentText}` },
+          ].map(a => (
+            <button key={a.label} className={`${S.card} border ${S.border} rounded-2xl py-3 flex flex-col items-center gap-1.5 active:scale-95 transition-transform`}>
+              <div className={`w-9 h-9 rounded-xl flex items-center justify-center ${a.color}`}>
+                <Icon name={a.icon} size={18} />
               </div>
-            </div>
-            <p className={`text-2xl font-semibold ${S.text}`}>{stat.value}</p>
+              <span className={`text-[10px] font-medium ${S.muted}`}>{a.label}</span>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Stats row */}
+      <div className="grid grid-cols-3 gap-2">
+        {[
+          { label: "Файлов", value: "1 284", icon: "Files" },
+          { label: "Папок", value: "148", icon: "Folder" },
+          { label: "Общих", value: "38", icon: "Users" },
+        ].map(st => (
+          <div key={st.label} className={`${S.card} border ${S.border} rounded-2xl px-3 py-3 text-center`}>
+            <Icon name={st.icon} size={16} className={`${S.accentText} mx-auto mb-1`} />
+            <p className={`text-base font-bold ${S.text}`}>{st.value}</p>
+            <p className={`text-[10px] ${S.muted}`}>{st.label}</p>
           </div>
         ))}
       </div>
 
+      {/* Recent */}
       <div>
-        <div className="flex items-center justify-between mb-3">
-          <h3 className={`text-sm font-semibold ${S.text}`}>Недавно открытые</h3>
-          <button className={`text-xs ${S.muted} hover:${S.accentText} transition-colors`}>Все →</button>
+        <div className="flex items-center justify-between px-1 mb-3">
+          <p className={`text-xs font-semibold ${S.muted} uppercase tracking-wider`}>Недавние</p>
+          <button onClick={() => onNav("files")} className={`text-xs font-semibold ${S.accentText}`}>Все →</button>
         </div>
-        <div className={`${S.card} border ${S.border} rounded-xl overflow-hidden`}>
-          {RECENT_FILES.map(f => <FileRow key={f.id} file={f} onShare={onShare} />)}
-        </div>
-      </div>
-
-      <div>
-        <div className="flex items-center justify-between mb-3">
-          <h3 className={`text-sm font-semibold ${S.text}`}>Облачное хранилище</h3>
-        </div>
-        <div className={`${S.card} border ${S.border} rounded-xl px-5 py-4`}>
-          <div className="flex items-center justify-between mb-2">
-            <span className={`text-sm ${S.text}`}>12.4 ГБ из 50 ГБ</span>
-            <span className={`text-xs ${S.muted}`}>24.8%</span>
-          </div>
-          <div className="h-2 bg-stone-100 rounded-full overflow-hidden">
-            <div className={`h-full ${S.accent} rounded-full`} style={{ width: "24.8%" }} />
-          </div>
-          <div className={`flex items-center gap-5 mt-4 text-xs ${S.muted}`}>
-            <div className="flex items-center gap-1.5"><span className={`w-2 h-2 rounded-full ${S.accent} inline-block`} />Документы 6.1 ГБ</div>
-            <div className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-amber-300 inline-block" />Фото 4.2 ГБ</div>
-            <div className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-stone-200 inline-block" />Прочее 2.1 ГБ</div>
-          </div>
+        <div className={`${S.card} border ${S.border} rounded-2xl overflow-hidden`}>
+          {RECENT_FILES.map(f => <MobileFileRow key={f.id} file={f} onShare={onShare} />)}
         </div>
       </div>
     </div>
   );
 }
 
-function FilesSection({ files, onShare }: { files: FileItem[]; onShare: (f: FileItem) => void }) {
-  const [view, setView] = useState<"list" | "grid">("list");
+function FilesScreen({ onShare }: { onShare: (f: FileItem) => void }) {
+  const [tab, setTab] = useState<"all" | "folders" | "files">("all");
+  const filtered = tab === "folders"
+    ? MOCK_FILES.filter(f => f.type === "folder")
+    : tab === "files"
+    ? MOCK_FILES.filter(f => f.type === "file")
+    : MOCK_FILES;
+
   return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-1.5">
-          <button className={`p-1.5 rounded-lg transition-colors ${view === "list" ? `${S.accentBg} ${S.accentText}` : `${S.muted} ${S.hover}`}`} onClick={() => setView("list")}><Icon name="List" size={16} /></button>
-          <button className={`p-1.5 rounded-lg transition-colors ${view === "grid" ? `${S.accentBg} ${S.accentText}` : `${S.muted} ${S.hover}`}`} onClick={() => setView("grid")}><Icon name="LayoutGrid" size={16} /></button>
-        </div>
-        <div className="flex items-center gap-2">
-          <button className={`flex items-center gap-1.5 px-3 py-1.5 text-xs ${S.muted} border ${S.border} rounded-lg hover:border-[hsl(32,18%,72%)] transition-colors`}>
-            <Icon name="ArrowUpDown" size={12} />Сортировка
+    <div className="space-y-4 pb-2">
+      {/* Tabs */}
+      <div className={`flex gap-1 p-1 ${S.card} border ${S.border} rounded-2xl`}>
+        {([["all", "Все"], ["folders", "Папки"], ["files", "Файлы"]] as const).map(([key, label]) => (
+          <button
+            key={key}
+            onClick={() => setTab(key)}
+            className={`flex-1 py-2 rounded-xl text-xs font-semibold transition-colors ${tab === key ? `${S.accent} text-white` : S.muted}`}
+          >
+            {label}
           </button>
-          <button className={`flex items-center gap-1.5 px-3 py-1.5 ${S.accent} text-white text-xs rounded-lg ${S.accentHover} transition-colors font-medium`}>
-            <Icon name="Plus" size={12} />Загрузить
-          </button>
-        </div>
+        ))}
       </div>
-      {view === "list" ? (
-        <div className={`${S.card} border ${S.border} rounded-xl overflow-hidden`}>
-          <div className={`flex items-center gap-4 px-5 py-2.5 border-b ${S.border} bg-[hsl(36,25%,93%)]`}>
-            <div className="w-8" />
-            <span className={`flex-1 text-xs font-semibold ${S.muted} uppercase tracking-wider`}>Название</span>
-            <span className={`text-xs font-semibold ${S.muted} uppercase tracking-wider`}>Изменено</span>
-          </div>
-          {files.map(f => <FileRow key={f.id} file={f} onShare={onShare} />)}
-        </div>
-      ) : (
-        <div className="grid grid-cols-3 gap-3">
-          {files.map(f => (
-            <div key={f.id} className={`group ${S.card} border ${S.border} rounded-xl p-4 hover:border-[hsl(32,18%,72%)] transition-colors cursor-pointer`}>
-              <div className={`w-10 h-10 rounded-xl flex items-center justify-center text-sm font-bold mb-3 ${f.extension ? EXT_COLORS[f.extension] || "bg-stone-100 text-stone-500" : "bg-stone-50 text-stone-400"}`}>
-                {f.type === "folder" ? <Icon name="Folder" size={18} /> : <span>{f.extension?.toUpperCase().slice(0, 3)}</span>}
-              </div>
-              <p className={`text-sm font-medium ${S.text} truncate`}>{f.name}</p>
-              <p className={`text-xs ${S.muted} mt-1`}>{f.size || f.modified}</p>
-            </div>
-          ))}
-        </div>
-      )}
+
+      {/* Sort row */}
+      <div className="flex items-center justify-between px-1">
+        <p className={`text-xs ${S.muted}`}>{filtered.length} элементов</p>
+        <button className={`flex items-center gap-1 text-xs font-medium ${S.muted} border ${S.border} rounded-lg px-2.5 py-1.5`}>
+          <Icon name="ArrowUpDown" size={11} />Сортировка
+        </button>
+      </div>
+
+      <div className={`${S.card} border ${S.border} rounded-2xl overflow-hidden`}>
+        {filtered.map(f => <MobileFileRow key={f.id} file={f} onShare={onShare} />)}
+      </div>
     </div>
   );
 }
 
-function SearchSection() {
+function SearchScreen() {
   const [query, setQuery] = useState("");
   const results = query ? MOCK_FILES.filter(f => f.name.toLowerCase().includes(query.toLowerCase())) : [];
+
   return (
-    <div className="space-y-4">
-      <div className="relative">
-        <Icon name="Search" size={16} className={`absolute left-3.5 top-1/2 -translate-y-1/2 ${S.muted}`} />
+    <div className="space-y-4 pb-2">
+      <div className={`flex items-center gap-2 border ${S.border} rounded-2xl px-4 py-2.5 ${S.card}`}>
+        <Icon name="Search" size={16} className={S.muted} />
         <input
           value={query}
           onChange={e => setQuery(e.target.value)}
           placeholder="Поиск файлов и папок..."
-          className={`w-full pl-10 pr-4 py-3 text-sm border ${S.border} rounded-xl outline-none focus:border-[hsl(16,60%,45%)] transition-colors ${S.card} bg-[hsl(36,40%,98%)]`}
+          className="flex-1 text-sm bg-transparent outline-none"
           autoFocus
         />
+        {query && (
+          <button onClick={() => setQuery("")} className={S.muted}>
+            <Icon name="X" size={15} />
+          </button>
+        )}
       </div>
-      {query && (
-        <div className={`${S.card} border ${S.border} rounded-xl overflow-hidden`}>
-          {results.length > 0 ? results.map(f => (
-            <FileRow key={f.id} file={f} onShare={() => {}} />
-          )) : (
-            <div className="py-12 text-center">
-              <Icon name="SearchX" size={32} className="text-stone-200 mx-auto mb-2" />
-              <p className={`text-sm ${S.muted}`}>Ничего не найдено по запросу «{query}»</p>
-            </div>
-          )}
-        </div>
-      )}
+
       {!query && (
+        <div>
+          <p className={`text-xs font-semibold ${S.muted} uppercase tracking-wider px-1 mb-3`}>Недавние поиски</p>
+          <div className="flex flex-wrap gap-2">
+            {["Отчёт", "Презентация", "Контракт", "Макеты"].map(tag => (
+              <button
+                key={tag}
+                onClick={() => setQuery(tag)}
+                className={`px-3 py-1.5 ${S.card} border ${S.border} rounded-full text-sm ${S.muted}`}
+              >
+                {tag}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {query && results.length > 0 && (
+        <div className={`${S.card} border ${S.border} rounded-2xl overflow-hidden`}>
+          {results.map(f => <MobileFileRow key={f.id} file={f} onShare={() => {}} />)}
+        </div>
+      )}
+
+      {query && results.length === 0 && (
         <div className="py-16 text-center">
-          <Icon name="Search" size={40} className="text-stone-200 mx-auto mb-3" />
-          <p className={`text-sm ${S.muted}`}>Введите название файла или папки</p>
+          <Icon name="SearchX" size={40} className="text-stone-200 mx-auto mb-3" />
+          <p className={`text-sm ${S.muted}`}>Ничего не найдено</p>
         </div>
       )}
     </div>
   );
 }
 
-function CloudSection() {
+function FavoritesScreen({ onShare }: { onShare: (f: FileItem) => void }) {
   return (
-    <div className="space-y-5">
-      <div className={`${S.card} border ${S.border} rounded-xl px-6 py-5`}>
-        <div className="flex items-center justify-between mb-5">
-          <div>
-            <h3 className={`font-semibold ${S.text}`}>Облачное хранилище</h3>
-            <p className={`text-xs ${S.muted} mt-0.5`}>Подключено и синхронизировано</p>
-          </div>
-          <div className="flex items-center gap-1.5 text-xs text-emerald-600 font-medium">
-            <span className="w-2 h-2 bg-emerald-400 rounded-full" />Онлайн
-          </div>
+    <div className="pb-2">
+      {FAVORITES.length > 0 ? (
+        <div className={`${S.card} border ${S.border} rounded-2xl overflow-hidden`}>
+          {FAVORITES.map(f => <MobileFileRow key={f.id} file={f} onShare={onShare} />)}
         </div>
-        <div className="space-y-2">
-          <div className="flex justify-between text-sm">
-            <span className={S.text}>12.4 ГБ использовано</span>
-            <span className={S.muted}>из 50 ГБ</span>
-          </div>
-          <div className="h-2.5 bg-stone-100 rounded-full overflow-hidden">
-            <div className={`h-full ${S.accent} rounded-full`} style={{ width: "24.8%" }} />
-          </div>
+      ) : (
+        <div className="py-20 text-center">
+          <Icon name="Star" size={40} className="text-stone-200 mx-auto mb-3" />
+          <p className={`text-sm ${S.muted}`}>Нет избранных файлов</p>
         </div>
-        <div className="grid grid-cols-3 gap-3 mt-5">
-          {[
-            { label: "Документы", size: "6.1 ГБ", icon: "FileText", color: "text-sky-500", bg: "bg-sky-50" },
-            { label: "Фотографии", size: "4.2 ГБ", icon: "Image", color: "text-amber-600", bg: "bg-amber-50" },
-            { label: "Прочее", size: "2.1 ГБ", icon: "Package", color: "text-stone-400", bg: "bg-stone-50" },
-          ].map(cat => (
-            <div key={cat.label} className={`${cat.bg} rounded-xl px-3 py-3`}>
-              <Icon name={cat.icon} size={18} className={`${cat.color} mb-2`} />
-              <p className={`text-xs ${S.muted}`}>{cat.label}</p>
-              <p className={`text-sm font-semibold ${S.text} mt-0.5`}>{cat.size}</p>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      <div className={`${S.card} border ${S.border} rounded-xl overflow-hidden`}>
-        <div className={`px-5 py-3 border-b ${S.border} bg-[hsl(36,25%,93%)]`}>
-          <h4 className={`text-xs font-semibold ${S.muted} uppercase tracking-wider`}>Синхронизация</h4>
-        </div>
-        {[
-          { name: "Проектная документация", status: "Синхронизировано", time: "1 мин назад", ok: true },
-          { name: "Макеты дизайна", status: "Синхронизируется...", time: "", ok: false },
-          { name: "Архив 2024.zip", status: "Синхронизировано", time: "2 часа назад", ok: true },
-        ].map(item => (
-          <div key={item.name} className={`flex items-center gap-4 px-5 py-3.5 border-b ${S.border} last:border-0`}>
-            <Icon name={item.ok ? "CheckCircle" : "RefreshCw"} size={16} className={item.ok ? "text-emerald-400" : `${S.accentText}`} />
-            <div className="flex-1">
-              <p className={`text-sm font-medium ${S.text}`}>{item.name}</p>
-              <p className={`text-xs ${S.muted}`}>{item.status}{item.time ? ` · ${item.time}` : ""}</p>
-            </div>
-          </div>
-        ))}
-      </div>
+      )}
     </div>
   );
 }
 
-function SettingsSection() {
+function SettingsScreen() {
   const [notifications, setNotifications] = useState(true);
   const [autoSync, setAutoSync] = useState(true);
+  const [biometric, setBiometric] = useState(false);
+
   return (
-    <div className="space-y-4 max-w-lg">
+    <div className="space-y-4 pb-2">
+      {/* Profile */}
+      <div className={`${S.card} border ${S.border} rounded-2xl px-4 py-4 flex items-center gap-4`}>
+        <div className={`w-14 h-14 rounded-2xl ${S.accentBg} flex items-center justify-center text-xl font-bold ${S.accentText}`}>ИП</div>
+        <div className="flex-1">
+          <p className={`font-semibold ${S.text}`}>Иван Петров</p>
+          <p className={`text-xs ${S.muted} mt-0.5`}>ivan@company.ru</p>
+          <span className={`text-[10px] px-2 py-0.5 rounded-full ${S.accent} text-white font-semibold mt-1 inline-block`}>Про-план</span>
+        </div>
+        <Icon name="ChevronRight" size={16} className={S.muted} />
+      </div>
+
+      {/* Toggles */}
       {[
-        {
-          title: "Аккаунт",
-          items: [
-            { label: "Имя пользователя", value: "Иван Петров", type: "text" },
-            { label: "Email", value: "ivan@company.ru", type: "text" },
-          ]
-        },
-        {
-          title: "Хранилище",
-          items: [
-            { label: "Автосинхронизация", value: autoSync, type: "toggle", onChange: () => setAutoSync(v => !v) },
-            { label: "Уведомления о доступе", value: notifications, type: "toggle", onChange: () => setNotifications(v => !v) },
-          ]
-        },
+        { title: "Хранилище и синхронизация", items: [
+          { label: "Автосинхронизация", sub: "Синхронизировать при Wi-Fi", value: autoSync, toggle: () => setAutoSync(v => !v) },
+          { label: "Уведомления", sub: "О доступе и изменениях", value: notifications, toggle: () => setNotifications(v => !v) },
+          { label: "Биометрия", sub: "Вход по отпечатку или Face ID", value: biometric, toggle: () => setBiometric(v => !v) },
+        ]},
       ].map(group => (
-        <div key={group.title} className={`${S.card} border ${S.border} rounded-xl overflow-hidden`}>
-          <div className={`px-5 py-3 border-b ${S.border} bg-[hsl(36,25%,93%)]`}>
-            <h4 className={`text-xs font-semibold ${S.muted} uppercase tracking-wider`}>{group.title}</h4>
-          </div>
-          {group.items.map((item: { label: string; value: string | boolean; type: string; onChange?: () => void }) => (
-            <div key={item.label} className={`flex items-center justify-between px-5 py-4 border-b ${S.border} last:border-0`}>
-              <span className={`text-sm ${S.text}`}>{item.label}</span>
-              {item.type === "toggle" ? (
+        <div key={group.title}>
+          <p className={`text-xs font-semibold ${S.muted} uppercase tracking-wider px-1 mb-2`}>{group.title}</p>
+          <div className={`${S.card} border ${S.border} rounded-2xl overflow-hidden divide-y ${S.divider}`}>
+            {group.items.map(item => (
+              <div key={item.label} className="flex items-center gap-3 px-4 py-3.5">
+                <div className="flex-1">
+                  <p className={`text-sm font-medium ${S.text}`}>{item.label}</p>
+                  <p className={`text-xs ${S.muted}`}>{item.sub}</p>
+                </div>
                 <button
-                  onClick={item.onChange}
-                  className={`w-10 h-5 rounded-full transition-colors relative flex-shrink-0 ${item.value ? S.accent : "bg-stone-200"}`}
+                  onClick={item.toggle}
+                  className={`w-11 h-6 rounded-full transition-colors relative flex-shrink-0 ${item.value ? S.accent : "bg-stone-200"}`}
                 >
-                  <span className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${item.value ? "translate-x-5" : "translate-x-0.5"}`} />
+                  <span className={`absolute top-0.5 w-5 h-5 bg-white rounded-full shadow-sm transition-transform ${item.value ? "translate-x-5" : "translate-x-0.5"}`} />
                 </button>
-              ) : (
-                <span className={`text-sm ${S.muted}`}>{item.value as string}</span>
-              )}
+              </div>
+            ))}
+          </div>
+        </div>
+      ))}
+
+      {/* Menu items */}
+      <div>
+        <p className={`text-xs font-semibold ${S.muted} uppercase tracking-wider px-1 mb-2`}>Прочее</p>
+        <div className={`${S.card} border ${S.border} rounded-2xl overflow-hidden divide-y ${S.divider}`}>
+          {[
+            { label: "Тарифный план", icon: "CreditCard", info: "Про · 50 ГБ" },
+            { label: "Безопасность", icon: "ShieldCheck", info: "" },
+            { label: "Поддержка", icon: "HelpCircle", info: "" },
+          ].map(item => (
+            <div key={item.label} className={`flex items-center gap-3 px-4 py-4 ${S.hover} active:bg-stone-50 transition-colors cursor-pointer`}>
+              <div className={`w-8 h-8 rounded-xl ${S.accentBg} flex items-center justify-center`}>
+                <Icon name={item.icon} size={15} className={S.accentText} />
+              </div>
+              <p className={`flex-1 text-sm font-medium ${S.text}`}>{item.label}</p>
+              {item.info && <span className={`text-xs ${S.muted}`}>{item.info}</span>}
+              <Icon name="ChevronRight" size={15} className={S.muted} />
             </div>
           ))}
         </div>
-      ))}
+      </div>
+
+      <button className="w-full py-3 rounded-2xl border border-red-100 text-red-400 text-sm font-semibold bg-red-50 active:bg-red-100 transition-colors">
+        Выйти из аккаунта
+      </button>
     </div>
   );
 }
+
+// --- Desktop layout (боковая панель) ---
+const DESKTOP_NAV = [
+  { id: "home" as Section, label: "Главная", icon: "LayoutDashboard" },
+  { id: "files" as Section, label: "Файлы", icon: "FolderOpen" },
+  { id: "search" as Section, label: "Поиск", icon: "Search" },
+  { id: "favorites" as Section, label: "Избранное", icon: "Star" },
+  { id: "settings" as Section, label: "Настройки", icon: "Settings" },
+];
 
 export default function Index() {
   const [activeSection, setActiveSection] = useState<Section>("home");
   const [shareFile, setShareFile] = useState<FileItem | null>(null);
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
-  const folders = MOCK_FILES.filter(f => f.type === "folder");
-  const files = MOCK_FILES.filter(f => f.type === "file");
+  const sectionTitle: Record<Section, string> = {
+    home: "Главная",
+    files: "Файлы",
+    search: "Поиск",
+    favorites: "Избранное",
+    settings: "Настройки",
+  };
 
-  const renderContent = () => {
+  const renderScreen = () => {
     switch (activeSection) {
-      case "home": return <HomeSection onShare={setShareFile} />;
-      case "files": return <FilesSection files={files} onShare={setShareFile} />;
-      case "folders": return <FilesSection files={folders} onShare={setShareFile} />;
-      case "recent": return <FilesSection files={RECENT_FILES} onShare={setShareFile} />;
-      case "favorites": return <FilesSection files={FAVORITES} onShare={setShareFile} />;
-      case "search": return <SearchSection />;
-      case "cloud": return <CloudSection />;
-      case "settings": return <SettingsSection />;
-      default: return null;
+      case "home": return <HomeScreen onShare={setShareFile} onNav={setActiveSection} />;
+      case "files": return <FilesScreen onShare={setShareFile} />;
+      case "search": return <SearchScreen />;
+      case "favorites": return <FavoritesScreen onShare={setShareFile} />;
+      case "settings": return <SettingsScreen />;
     }
   };
 
-  const currentNav = NAV_ITEMS.find(n => n.id === activeSection);
-
   return (
-    <div className={`flex h-screen ${S.bg} font-raleway overflow-hidden`}>
-      {/* Sidebar */}
-      <aside className={`flex flex-col ${S.sidebar} border-r ${S.border} transition-all duration-300 flex-shrink-0 ${sidebarCollapsed ? "w-14" : "w-56"}`}>
-        <div className={`flex items-center justify-between px-3 py-4 border-b ${S.border}`}>
-          {!sidebarCollapsed && (
-            <div className="flex items-center gap-2.5 pl-1">
-              <div className={`w-6 h-6 ${S.accent} rounded-md flex items-center justify-center flex-shrink-0`}>
-                <Icon name="Layers" size={13} className="text-white" />
-              </div>
-              <span className={`font-bold ${S.text} text-sm tracking-tight`}>FileSpace</span>
+    <div className={`min-h-screen ${S.bg} font-raleway flex items-start justify-center`}>
+
+      {/* ===== MOBILE PROTOTYPE ===== */}
+      <div className="flex md:hidden flex-col w-full min-h-screen">
+        {/* Status bar */}
+        <div className={`${S.card} border-b ${S.border} px-5 pt-3 pb-2 flex items-center justify-between`}>
+          <div className="flex items-center gap-2">
+            <div className={`w-5 h-5 ${S.accent} rounded-md flex items-center justify-center`}>
+              <Icon name="Layers" size={11} className="text-white" />
             </div>
-          )}
-          <button
-            onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
-            className={`p-1.5 rounded-lg ${S.hover} ${S.muted} transition-colors ${sidebarCollapsed ? "mx-auto" : ""}`}
-          >
-            <Icon name={sidebarCollapsed ? "ChevronRight" : "ChevronLeft"} size={14} />
-          </button>
+            <span className={`font-bold text-sm ${S.text}`}>FileSpace</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <button className={`p-1.5 rounded-full ${S.hover} ${S.muted} relative`}>
+              <Icon name="Bell" size={18} />
+              <span className={`absolute top-1 right-1 w-1.5 h-1.5 rounded-full ${S.accent}`} />
+            </button>
+            <div className={`w-7 h-7 rounded-full ${S.accentBg} flex items-center justify-center text-xs font-bold ${S.accentText}`}>ИП</div>
+          </div>
         </div>
 
-        <nav className="flex-1 px-2 py-3 space-y-0.5 overflow-y-auto">
-          {NAV_ITEMS.map(item => (
-            <button
-              key={item.id}
-              onClick={() => setActiveSection(item.id)}
-              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-colors font-medium ${
-                activeSection === item.id ? S.active : S.navInactive
-              } ${sidebarCollapsed ? "justify-center" : ""}`}
-            >
-              <Icon name={item.icon} size={15} />
-              {!sidebarCollapsed && <span>{item.label}</span>}
-            </button>
-          ))}
-        </nav>
+        {/* Page header */}
+        <div className="px-4 pt-5 pb-3">
+          <h1 className={`text-xl font-bold ${S.text}`}>{sectionTitle[activeSection]}</h1>
+          {activeSection === "home" && (
+            <p className={`text-xs ${S.muted} mt-0.5`}>Добро пожаловать, Иван</p>
+          )}
+        </div>
 
-        {!sidebarCollapsed && (
+        {/* Content */}
+        <div className="flex-1 overflow-y-auto px-4 pb-24">
+          {renderScreen()}
+        </div>
+
+        {/* Bottom navigation */}
+        <div className={`fixed bottom-0 left-0 right-0 ${S.card} border-t ${S.border} px-2 pb-safe`}>
+          <div className="flex">
+            {BOTTOM_NAV.map(item => (
+              <button
+                key={item.id}
+                onClick={() => setActiveSection(item.id)}
+                className={`flex-1 flex flex-col items-center gap-1 py-3 transition-colors ${
+                  activeSection === item.id ? S.accentText : S.muted
+                }`}
+              >
+                <Icon name={item.icon} size={item.id === "search" ? 22 : 20} />
+                <span className={`text-[10px] font-semibold`}>{item.label}</span>
+                {activeSection === item.id && (
+                  <span className={`absolute bottom-1 w-1 h-1 rounded-full ${S.accent}`} />
+                )}
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {/* ===== DESKTOP LAYOUT ===== */}
+      <div className="hidden md:flex w-full h-screen overflow-hidden">
+        {/* Sidebar */}
+        <aside className={`w-56 flex flex-col bg-[hsl(36,30%,97%)] border-r ${S.border} flex-shrink-0`}>
+          <div className={`flex items-center gap-2.5 px-4 py-4 border-b ${S.border}`}>
+            <div className={`w-6 h-6 ${S.accent} rounded-md flex items-center justify-center`}>
+              <Icon name="Layers" size={13} className="text-white" />
+            </div>
+            <span className={`font-bold ${S.text} text-sm`}>FileSpace</span>
+          </div>
+          <nav className="flex-1 px-2 py-3 space-y-0.5">
+            {DESKTOP_NAV.map(item => (
+              <button
+                key={item.id}
+                onClick={() => setActiveSection(item.id)}
+                className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-colors ${
+                  activeSection === item.id
+                    ? `${S.accent} text-white`
+                    : `${S.muted} ${S.hover} hover:text-[hsl(24,20%,22%)]`
+                }`}
+              >
+                <Icon name={item.icon} size={15} />
+                {item.label}
+              </button>
+            ))}
+          </nav>
           <div className={`px-3 py-4 border-t ${S.border}`}>
             <div className="flex items-center gap-2.5 px-1">
-              <div className={`w-7 h-7 rounded-full ${S.accentBg} flex items-center justify-center text-xs font-semibold ${S.accentText} flex-shrink-0`}>ИП</div>
+              <div className={`w-7 h-7 rounded-full ${S.accentBg} flex items-center justify-center text-xs font-bold ${S.accentText}`}>ИП</div>
               <div className="flex-1 min-w-0">
                 <p className={`text-xs font-semibold ${S.text} truncate`}>Иван Петров</p>
-                <p className={`text-xs ${S.muted} truncate`}>Про-план · 50 ГБ</p>
+                <p className={`text-xs ${S.muted}`}>Про-план · 50 ГБ</p>
               </div>
             </div>
           </div>
-        )}
-      </aside>
+        </aside>
 
-      {/* Main */}
-      <main className="flex-1 flex flex-col overflow-hidden">
-        <div className={`flex items-center justify-between px-6 py-4 ${S.card} border-b ${S.border}`}>
-          <h1 className={`text-sm font-semibold ${S.text}`}>{currentNav?.label}</h1>
-          <div className="flex items-center gap-2">
-            <button className={`p-2 rounded-lg ${S.hover} ${S.muted} transition-colors`}>
-              <Icon name="Bell" size={15} />
-            </button>
-            <button className={`flex items-center gap-1.5 px-3 py-1.5 ${S.accent} text-white text-xs rounded-lg ${S.accentHover} transition-colors font-semibold`}>
-              <Icon name="Upload" size={12} />
-              Загрузить
-            </button>
+        {/* Main */}
+        <main className="flex-1 flex flex-col overflow-hidden">
+          <div className={`flex items-center justify-between px-6 py-4 ${S.card} border-b ${S.border}`}>
+            <h1 className={`text-sm font-semibold ${S.text}`}>{sectionTitle[activeSection]}</h1>
+            <div className="flex items-center gap-2">
+              <button className={`p-2 rounded-lg ${S.hover} ${S.muted} transition-colors relative`}>
+                <Icon name="Bell" size={15} />
+                <span className={`absolute top-1.5 right-1.5 w-1.5 h-1.5 rounded-full ${S.accent}`} />
+              </button>
+              <button className={`flex items-center gap-1.5 px-3 py-1.5 ${S.accent} text-white text-xs rounded-lg ${S.accentHover} transition-colors font-semibold`}>
+                <Icon name="Upload" size={12} />Загрузить
+              </button>
+            </div>
           </div>
-        </div>
+          <div className="flex-1 overflow-y-auto px-6 py-6 max-w-2xl">
+            {renderScreen()}
+          </div>
+        </main>
+      </div>
 
-        <div className="flex-1 overflow-y-auto px-6 py-6">
-          {renderContent()}
-        </div>
-      </main>
-
-      {shareFile && <ShareModal file={shareFile} onClose={() => setShareFile(null)} />}
+      {shareFile && <ShareSheet file={shareFile} onClose={() => setShareFile(null)} />}
     </div>
   );
 }
