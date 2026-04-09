@@ -20,7 +20,9 @@ export default {
 		},
 		extend: {
 			fontFamily: {
-				ibm: ['"IBM Plex Sans"', 'sans-serif'],
+				ibm: ['Raleway', 'sans-serif'],
+				raleway: ['Raleway', 'sans-serif'],
+				lora: ['Lora', 'serif'],
 			},
 			colors: {
 				border: 'hsl(var(--border))',
